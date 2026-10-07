@@ -3096,6 +3096,10 @@ html.zh .ep-app{background:rgba(255,255,255,.97)!important}
 #zh-sweep::before{filter:none!important;background:linear-gradient(100deg,transparent 0%,rgba(22,190,166,.08) 30%,rgba(255,255,255,.45) 50%,rgba(14,127,160,.08) 70%,transparent 100%)!important}
 html.zh body{text-rendering:auto!important}
 
+/* AI 核心容器保持透明（需在上方實色卡片規則之後再宣告一次） */
+html.zh :is(#bb-assistant-core,#pb-panbo-core,#pb-org-core-orb,#ep-agent-core,.bb-graph-core,#o-core-wrap){
+  background:transparent!important;border-color:transparent!important;box-shadow:none!important}
+
 /* ══════════ PumBo 擬真產品流程 ══════════ */
 #panbo-layer.zh-pb-real .pb-scene,#panbo-layer.zh-pb-real .pb-final-ray,#panbo-layer.zh-pb-real .pb-sem-dot{display:none!important}
 #zh-pb-cap{position:absolute;left:50%;top:calc(6.5% + 40px);transform:translateX(-50%);z-index:41;display:flex;align-items:center;gap:12px;
