@@ -3086,6 +3086,16 @@ html.zh .ep-app.zh-replay .ep-thread-bubble.text{max-width:92%!important;font-si
 @keyframes zhBubbleIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 html.zh #ep-beat-pill{display:none!important}
 
+/* ══════════ 效能 ══════════
+   背景每幀都在動，任何「背景模糊」都會迫使瀏覽器每幀重算，是 lag 主因。
+   全面改為不透明度較高的實色卡片（外觀幾乎相同）。 */
+html.zh *,html.zh *::before,html.zh *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html.zh :is(.pb-glass,.bb-glass,.k3k-panel,.bp-card,.o-cap,.f-card,#qcard,#kx-card,#kx-manifesto,.nd1 .nb,#hud,#f-title){
+  background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(252,254,253,.95))!important}
+html.zh .ep-app{background:rgba(255,255,255,.97)!important}
+#zh-sweep::before{filter:none!important;background:linear-gradient(100deg,transparent 0%,rgba(22,190,166,.08) 30%,rgba(255,255,255,.45) 50%,rgba(14,127,160,.08) 70%,transparent 100%)!important}
+html.zh body{text-rendering:auto!important}
+
 /* ══════════ PumBo 擬真產品流程 ══════════ */
 #panbo-layer.zh-pb-real .pb-scene,#panbo-layer.zh-pb-real .pb-final-ray,#panbo-layer.zh-pb-real .pb-sem-dot{display:none!important}
 #zh-pb-cap{position:absolute;left:50%;top:calc(6.5% + 40px);transform:translateX(-50%);z-index:41;display:flex;align-items:center;gap:12px;
@@ -6463,27 +6473,39 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{applyBeat(BEATS[0]);}));
     hud = function(t){ origHud(t); try { onBeat(t); } catch (e) {} };
   }
 
-  /* ── 背景：極光柔光 + 星點連線 ── */
+  /* ── 背景：極光柔光 + 漂浮光點（效能版）──
+     柔光本身就是模糊的，改以 1/3 解析度繪製再由 CSS 放大；每兩幀更新一次（約 30fps），
+     並移除星點連線（原本每幀上百條線段）。 */
+  const BG_S = 1 / 3;
   let pts = [];
   function seed(){
-    const n = Math.round(Math.min(64, (bW * bH) / 26000));
+    const n = 26;
     pts = Array.from({length: n}, () => ({
       x: Math.random() * bW, y: Math.random() * bH,
-      r: .6 + Math.random() * 1.3, a: Math.random() * 6.28,
-      vx: (Math.random() - .5) * .12, vy: -.04 - Math.random() * .10
+      r: .5 + Math.random() * .6, a: Math.random() * 6.28,
+      vx: (Math.random() - .5) * .08, vy: -.03 - Math.random() * .06
     }));
+  }
+  function sizeBg(){
+    if (typeof bgc === 'undefined' || !bgc) return;
+    bW = bgc.width = Math.max(2, Math.ceil(innerWidth * BG_S));
+    bH = bgc.height = Math.max(2, Math.ceil(innerHeight * BG_S));
+    bgc.style.width = '100%'; bgc.style.height = '100%';
+    seed();
   }
   const origInit = typeof initBg === 'function' ? initBg : null;
   if (origInit) {
-    initBg = function(){ origInit(); seed(); };
+    initBg = function(){ origInit(); sizeBg(); };
+    sizeBg();
   }
-  let bt = 0;
+  let bt = 0, bgTick = 0;
   const lerp = (a, b, k) => a + (b - a) * k;
   if (typeof drawBg === 'function') {
     drawBg = function(){
+      if ((bgTick++ & 1) === 1) return;
       if (!pts.length) seed();
-      bt += reduce ? 0 : .0035;
-      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) tone[i][j] = lerp(tone[i][j], toneTarget[i][j], .02);
+      bt += reduce ? 0 : .007;
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) tone[i][j] = lerp(tone[i][j], toneTarget[i][j], .04);
       bgx.clearRect(0, 0, bW, bH);
       const blobs = [
         {x: .18 + Math.sin(bt * .9) * .08, y: .22 + Math.cos(bt * .7) * .07, r: .55, c: tone[0], a: .15},
@@ -6500,25 +6522,12 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{applyBeat(BEATS[0]);}));
         bgx.fillStyle = g;
         bgx.fillRect(0, 0, bW, bH);
       });
-      /* 星點：緩慢上升，近距離時以極淡細線相連 */
       for (const p of pts) {
-        if (!reduce) { p.x += p.vx; p.y += p.vy; p.a += .012; }
-        if (p.y < -10) { p.y = bH + 10; p.x = Math.random() * bW; }
-        if (p.x < -10) p.x = bW + 10; if (p.x > bW + 10) p.x = -10;
-      }
-      bgx.lineWidth = .6;
-      for (let i = 0; i < pts.length; i++) {
-        for (let j = i + 1; j < pts.length; j++) {
-          const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y, d2 = dx * dx + dy * dy;
-          if (d2 < 120 * 120) {
-            bgx.strokeStyle = `rgba(3,102,92,${(1 - Math.sqrt(d2) / 120) * .07})`;
-            bgx.beginPath(); bgx.moveTo(pts[i].x, pts[i].y); bgx.lineTo(pts[j].x, pts[j].y); bgx.stroke();
-          }
-        }
-      }
-      for (const p of pts) {
+        if (!reduce) { p.x += p.vx; p.y += p.vy; p.a += .024; }
+        if (p.y < -4) { p.y = bH + 4; p.x = Math.random() * bW; }
+        if (p.x < -4) p.x = bW + 4; if (p.x > bW + 4) p.x = -4;
         bgx.beginPath(); bgx.arc(p.x, p.y, p.r, 0, 6.2832);
-        bgx.fillStyle = `rgba(0,138,124,${.10 + Math.sin(p.a) * .06})`;
+        bgx.fillStyle = `rgba(0,138,124,${.16 + Math.sin(p.a) * .08})`;
         bgx.fill();
       }
     };
@@ -6536,7 +6545,7 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{applyBeat(BEATS[0]);}));
       return x * x * (3 - 2 * x);
     };
     function blob(ctx, cx, cy, r, t, f, amp){
-      const N = 96;
+      const N = 72;
       ctx.beginPath();
       for (let i = 0; i <= N; i++) {
         const a = i / N * TAU;
@@ -6552,8 +6561,25 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{applyBeat(BEATS[0]);}));
       this.pulse = Math.max(this.pulse || 0, v);
       (this.ripples || (this.ripples = [])).push({k: 0, v: Math.min(1.2, v)});
     };
+    /* 效能：每隔數幀檢查一次畫布是否真的看得到（在視窗內、祖先未隱藏或全透明），看不到就不畫 */
+    function coreVisible(cv){
+      if (!cv || !cv.isConnected) return false;
+      const r = cv.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return false;
+      let o = 1;
+      for (let e = cv; e && e.nodeType === 1; e = e.parentElement) {
+        const cs = getComputedStyle(e);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        o *= +cs.opacity;
+        if (o < .02) return false;
+      }
+      return true;
+    }
     Core.prototype.draw = function(){
       if (!this.on) return;
+      if (!(this._vc > 0)) { this._vc = 8; this._vis = coreVisible(this.cv); } else this._vc--;
+      if (!this._vis) { if (!this._blank) { this.ctx.clearRect(0, 0, this.sz, this.sz); this._blank = true; } return; }
+      this._blank = false;
       const {ctx, sz} = this, cx = sz / 2, cy = sz / 2;
       if (this.seed === undefined) this.seed = Math.random() * 40;
       const now = performance.now() / 1000 + this.seed;
@@ -6592,10 +6618,12 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{applyBeat(BEATS[0]);}));
 
       /* 三層半透明薄膜（像細胞膜一樣緩慢蠕動） */
       const amp = small ? .035 : .045;
-      blob(ctx, cx, cy, R * (1.17 + b3 * .07 + p * .05), t, [2, 4, 1, .32, .21, .55], amp);
-      ctx.fillStyle = `rgba(22,190,166,${.09 + b3 * .05})`; ctx.fill();
-      blob(ctx, cx, cy, R * (1.10 + b2 * .05 + p * .04), t, [3, 2, 5, .44, .27, .63], amp * .9);
-      ctx.fillStyle = `rgba(10,160,143,${.13 + b2 * .05})`; ctx.fill();
+      if (!small) {
+        blob(ctx, cx, cy, R * (1.17 + b3 * .07 + p * .05), t, [2, 4, 1, .32, .21, .55], amp);
+        ctx.fillStyle = `rgba(22,190,166,${.09 + b3 * .05})`; ctx.fill();
+        blob(ctx, cx, cy, R * (1.10 + b2 * .05 + p * .04), t, [3, 2, 5, .44, .27, .63], amp * .9);
+        ctx.fillStyle = `rgba(10,160,143,${.13 + b2 * .05})`; ctx.fill();
+      }
       blob(ctx, cx, cy, R * (1.04 + b1 * .035 + p * .03), t, [3, 5, 2, .70, .52, 1.0], amp * .8);
       ctx.fillStyle = `rgba(5,132,122,${.20 + b1 * .06})`; ctx.fill();
 
@@ -6607,7 +6635,7 @@ requestAnimationFrame(()=>requestAnimationFrame(()=>{applyBeat(BEATS[0]);}));
       body.addColorStop(.78, '#058579');
       body.addColorStop(1, '#046B66');
       ctx.fillStyle = body; ctx.fill();
-      if (ctx.createConicGradient) {
+      if (!small && ctx.createConicGradient) {
         const sheen = ctx.createConicGradient(t * .22, cx, cy);
         sheen.addColorStop(0, 'rgba(14,127,160,.22)');
         sheen.addColorStop(.3, 'rgba(14,127,160,0)');
